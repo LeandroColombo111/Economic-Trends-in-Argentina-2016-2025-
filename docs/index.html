@@ -1,0 +1,73 @@
+<!doctype html>
+.card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+h1{margin:0 0 8px}
+.muted{color:#666}
+</style>
+</head>
+<body>
+<h1>Argentina Economic Trends</h1>
+<p class="muted">Local ETL → Static dashboard (GitHub Pages). Data sources: Argentina Time Series API (datos.gob.ar).</p>
+<div class="grid">
+<div class="card"><div id="usd"></div></div>
+<div class="card"><div id="ipc"></div></div>
+<div class="card"><div id="res"></div></div>
+<div class="card"><div id="realw"></div></div>
+</div>
+
+
+<script>
+// I fetch the precomputed CSV exported by the pipeline.
+async function loadCSV(path){
+const res = await fetch(path);
+const text = await res.text();
+const [header,...rows] = text.trim().split(/\r?\n/).map(r=>r.split(","));
+const idx = Object.fromEntries(header.map((h,i)=>[h,i]));
+return rows.map(r=>({
+date: new Date(r[idx.date]),
+usd_official: parseFloat(r[idx.usd_official]||""),
+ipc: parseFloat(r[idx.ipc]||""),
+reserves_usd: parseFloat(r[idx.reserves_usd]||""),
+ripte: parseFloat(r[idx.ripte]||""),
+}));
+}
+
+
+function line(x,y,name){
+return {x,y,mode:'lines',name};
+}
+
+
+(async function main(){
+const data = await loadCSV('assets/series_summary.csv');
+
+
+const d = data.filter(d=>!isNaN(d.usd_official));
+Plotly.newPlot('usd', [line(d.map(v=>v.date), d.map(v=>v.usd_official), 'USD Official (ARS)')], {
+title: 'Official Exchange Rate (end of month)', yaxis:{title:'ARS per USD'}, xaxis:{title:'Date'}
+});
+
+
+const i = data.filter(d=>!isNaN(d.ipc));
+// Simple rebasing to 100 for display (front-end only)
+const base = i.length? i[0].ipc : 1;
+Plotly.newPlot('ipc', [line(i.map(v=>v.date), i.map(v=>v.ipc/base*100), 'CPI (rebased = 100)')], {
+title: 'CPI National (rebased)', yaxis:{title:'Index (=100 at start)'}, xaxis:{title:'Date'}
+});
+
+
+const r = data.filter(d=>!isNaN(d.reserves_usd));
+Plotly.newPlot('res', [line(r.map(v=>v.date), r.map(v=>v.reserves_usd), 'International Reserves (USD)')], {
+title: 'International Reserves – BCRA', yaxis:{title:'USD Millions'}, xaxis:{title:'Date'}
+});
+
+
+const rw = data.filter(d=>!isNaN(d.ripte) && !isNaN(d.ipc));
+const ipcBase = rw.length? rw[0].ipc : 1;
+const realWage = rw.map(v=> v.ripte / (v.ipc / ipcBase));
+Plotly.newPlot('realw', [line(rw.map(v=>v.date), realWage, 'Real Wage (RIPTE deflated by CPI)')], {
+title: 'Real Wage Proxy (RIPTE / CPI)', yaxis:{title:'Index (start=RIPTE base)'}, xaxis:{title:'Date'}
+});
+})();
+</script>
+</body>
+</html>
